@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd">
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="c189344a-6ad1-4d57-bb36-e6faba772a78" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="12345678" database="communication_service" />
+	</db:config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="07835dd4-f2e0-40f4-9c77-4da3aff6697b" >
+		<http:listener-connection host="localhost" port="8080" />
+	</http:listener-config>
+	<flow name="Get_all_event" doc:id="b6aef7b2-6741-4393-930e-1ac8d971abab" >
+		<http:listener doc:name="Listener" doc:id="889b67b5-c9c3-47ab-aefe-91c5cbb68070" config-ref="HTTP_Listener_config" path="/event/list" allowedMethods="GET"/>
+		<set-variable value="#[message.attributes]" doc:name="Event Model Attributes" doc:id="84ee2036-0a11-4db8-8aee-bef75ea76d7d" variableName="eventModelAttributes" />
+		<logger level="INFO" doc:name="Logger" doc:id="011e6393-970e-40b4-b6fd-839195904260" message="event_type: #[message.attributes.queryParams.event_type] #['\n'] event_status: #[message.attributes.queryParams.event_status]"/>
+		<choice doc:name="Choice" doc:id="ac2b2299-9ac7-4fe1-b642-0cf46640394c" >
+			<when expression="#[message.attributes.queryParams.event_status != null and attributes.queryParams.event_type != null]">
+				<db:select doc:id="778b50c4-9355-46b9-b740-83e5976d73a5" config-ref="Database_Config">
+			<db:sql><![CDATA[select * from event where event_status = :event_status and event_type = :event_type
+]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	event_status:vars.eventModelAttributes.queryParams.event_status,
+	event_type :vars.eventModelAttributes.queryParams.event_type
+	
+	}]]]></db:input-parameters>
+		</db:select>
+			</when>
+			<otherwise >
+				<db:select doc:name="Select" doc:id="5e2f418f-ad7a-4dbe-8b41-1d6b66ea02e3" config-ref="Database_Config">
+					<db:sql ><![CDATA[select * from event
+]]></db:sql>
+				</db:select>
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="Transform Message" doc:id="43d37ee3-ac90-4c01-a7c0-6a4a27b2f538" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="Get_by_id" doc:id="339e7666-c52a-4a37-869b-fed786a06605" >
+		<http:listener doc:name="Listener" doc:id="60911f33-b12c-4c76-9970-73cf6af12de6" config-ref="HTTP_Listener_config" allowedMethods="Get" path="/event/{id}"/>
+		<db:select doc:name="Select" doc:id="5c8df5dc-dcdf-4dc4-ab31-00c532681c0e" config-ref="Database_Config">
+			<db:sql ><![CDATA[select * from event where id = :id]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id: attributes.uriParams.id
+}]]]></db:input-parameters>
+		</db:select>
+		<logger level="INFO" doc:name="Logger" doc:id="d0d9f1f8-2d3b-4bf3-8803-0010643c4a19" message="#[message.payload]"/>
+		<ee:transform doc:name="Transform Message" doc:id="d7d74e08-d58d-482b-9c3e-b39c943b3b31" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="Post_Create_Event" doc:id="a75ffcff-7858-43f7-88f1-1f6d74655bb9" >
+		<http:listener doc:name="Listener" doc:id="2d68e96a-4eaa-4303-a5ec-88fc848dc31c" config-ref="HTTP_Listener_config" path="/event" allowedMethods="Post"/>
+		<db:insert doc:name="Insert" doc:id="32954b05-a7d8-43c2-8be8-9fa87965c4ff" config-ref="Database_Config">
+			<db:sql ><![CDATA[Insert into event(id,event_type,event_status) values( :id, :event_type, :event_status)]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id: payload.id,
+	event_type: payload.event_type,
+	event_status: payload.event_status
+}]]]></db:input-parameters>
+		</db:insert>
+		<logger level="INFO" doc:name="Logger" doc:id="22a45735-cd53-483b-b3f8-aa07b590e3ab" message="message.payload"/>
+		<ee:transform doc:name="Transform Message" doc:id="45d4d383-f519-4778-b0f0-689605dba812" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="Patch_Event" doc:id="d96432bb-2c4a-4500-a926-843d660dcc1f" >
+		<http:listener doc:name="Listener" doc:id="b9a41ab5-bdbc-4100-83f5-050e20a7410b" config-ref="HTTP_Listener_config" path="/event/{id}" allowedMethods="Patch"/>
+		<db:update doc:name="Update" doc:id="7a316690-ad1d-4508-97e1-e30efcb06417" config-ref="Database_Config">
+			<db:sql ><![CDATA[update event set event_type = :event_type, event_status = :event_status where id = :id]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id: attributes.uriParams.id,
+	event_type: payload.event_type,
+	event_status: payload.event_status
+}]]]></db:input-parameters>
+		</db:update>
+		<logger level="INFO" doc:name="Logger" doc:id="66db981e-b428-420e-a393-f8f2120ea75a" message="message.payload"/>
+		<ee:transform doc:name="Transform Message" doc:id="b687a624-dda3-41f5-8f8f-5e62378b63e0" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="Put_Event" doc:id="42d37ec9-9a98-4ec1-9e9f-df9fef8f714f" >
+		<http:listener doc:name="Listener" doc:id="f3b9d8d3-38b6-42dc-8777-b1d580e82699" config-ref="HTTP_Listener_config" path="/event/{id}" allowedMethods="Put"/>
+		<set-variable value="#[message.payload]" doc:name="Event Model Payload" doc:id="25256207-33c0-430e-bc9b-67b5100bacc4" variableName="eventModelPayload"/>
+		<set-variable value="#[message.attributes]" doc:name="Event Model Attributes" doc:id="d95b9707-6211-4843-bbee-1941b4b2e0c2" variableName="eventModelAttributes"/>
+		<logger level="INFO" doc:name="Logger" doc:id="7947d070-cc5b-43cf-a153-1a65c6706d51" message="postman payload: #[vars.eventModelPayload]  and  postman attribute: #[vars.eventModelAttributes]"/>
+		<db:select doc:name="Select" doc:id="14ab733f-46f2-4a2f-a09a-92d8284442c4" config-ref="Database_Config">
+			<db:sql ><![CDATA[select * from event where id = :id]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id: vars.eventModelAttributes.uriParams.id
+}]]]></db:input-parameters>
+		</db:select>
+		<logger level="INFO" doc:name="Logger" doc:id="6145a5f6-e9dd-4dfb-9c9a-1c9a955d75b7" message="database payload   id: #[message.payload.id] event_type: #[message.payload.event_type]: event_status: #[message.payload.event_status]"/>
+		<choice doc:name="Choice" doc:id="134d7e1c-200e-4f90-bc9c-0a136ddfe18b" >
+			<when expression="#[message.payload.id != null]">
+				<db:update doc:name="Update" doc:id="7ab814a1-1200-4c09-89ba-039ffa6bb98a" config-ref="Database_Config">
+					<db:sql ><![CDATA[update event set event_type = :event_type, event_status = :event_status where id = :id]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+	id: vars.eventModelAttributes.uriParams.id,
+	event_type: vars.eventModelPayload.event_type,
+	event_status: vars.eventModelPayload.event_status
+}]]]></db:input-parameters>
+				</db:update>
+			</when>
+			<otherwise >
+				<db:insert doc:name="Insert" doc:id="fba9438e-9af5-45ff-a9dc-fcb236ffadbe" config-ref="Database_Config">
+					<db:sql ><![CDATA[Insert into event(id,event_type,event_status) values( :id, :event_type, :event_status)]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+	id: vars.eventModelAttributes.uriParams.id,
+	event_type: vars.eventModelPayload.event_type,
+	event_status: vars.eventModelPayload.event_status
+}]]]></db:input-parameters>
+				</db:insert>
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="Transform Message" doc:id="18ea2169-5f70-460e-bc62-d8311a57135a" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="Delete_Event" doc:id="e9951b42-9e8d-4198-a270-7c9c6642c35d" >
+		<http:listener doc:name="Listener" doc:id="3deed940-87f1-4e33-a475-1726a7309934" config-ref="HTTP_Listener_config" path="/event/{id}"/>
+		<db:delete doc:name="Delete" doc:id="230a6e91-563b-4d6f-8a66-3c3a1cd251d5" config-ref="Database_Config">
+			<db:sql ><![CDATA[Delete from event where id = :id ]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id:attributes.uriParams.id
+}]]]></db:input-parameters>
+		</db:delete>
+		<logger level="INFO" doc:name="Logger" doc:id="15aa09f2-bcf1-4ec2-827f-03d779c9a483" message="#[message.payload]"/>
+		<ee:transform doc:name="Transform Message" doc:id="a2a2bf56-e11a-4e15-97b7-ce1ec22f40fa" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="Scheduler_Demo" doc:id="82013766-3ae4-46d2-8d49-5096bdbda4a2" >
+		<scheduler doc:name="Scheduler" doc:id="758eab3f-dbd1-46ca-a67f-7fe17dc1f20f" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="10" startDelay="9" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<logger level="INFO" doc:name="Logger" doc:id="46133cbf-04dd-46ae-a3ba-047de8690942" message="Scheduler is start"/>
+	</flow>
+</mule>
